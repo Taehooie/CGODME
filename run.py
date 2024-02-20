@@ -3,7 +3,7 @@ import tensorflow as tf
 import pandas as pd
 import numpy as np
 from data import data_generation
-from objective_function import calculateCoreVars, optimizeSupply
+from calibration import calculateCoreVars, optimizeSupply
 import argparse
 import logging
 warnings.filterwarnings('ignore') # ignore warning messages
