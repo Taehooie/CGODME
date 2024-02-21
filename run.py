@@ -2,6 +2,7 @@ import warnings
 import tensorflow as tf
 import pandas as pd
 import numpy as np
+import math
 from data import data_generation
 from calibration import calculateCoreVars, optimizeSupply
 import argparse
@@ -19,7 +20,7 @@ def admm_optimization(od_volume: tf.Tensor,
                       lagrangian_params: dict,
                       lambda_positive: tf.Tensor,
                       training_steps: int,
-                      obs_link_volumes: tf.Tensor,
+                      obs_link_volumes: dict,
                       init_path_flows: tf.Tensor) -> None:
 
     """
@@ -35,7 +36,7 @@ def admm_optimization(od_volume: tf.Tensor,
     - lagrangian_params (dict): Parameters for the Lagrangian multiplier update.
     - lambda_positive (tf.Tensor): Lagrangian multipliers for positive path flows.
     - training_steps (int): Number of ADMM training steps.
-    - obs_link_volumes (tf.Tensor): Number of counted link volumes.
+    - obs_link_volumes (dict): total link volumes; car/truck link volumes.
 
     Returns:
     None
@@ -86,14 +87,38 @@ def admm_optimization(od_volume: tf.Tensor,
                                init_path_flows,
                                )
 
-    pd.DataFrame(path_flow.numpy()).to_csv("optimal_path_flows.csv", index=False)
-    pd.DataFrame(losses).to_csv("losses.csv", index=False)
-    logging.info("Optimal path flows: %s", path_flow.numpy())
+    estimated_link_volumes = tf.squeeze(calculateCoreVars(path_flow, od_volume, spare_od_path_inc,
+                                               path_link_inc, path_link_inc_n, bpr_params))
+
+    evaluation(losses, path_flow, estimated_link_volumes, obs_link_volumes)
 
     # logging.info("Updating the Lagrangian multipliers")
     # lambda_positive += lagrangian_params["rho_factor"] * \
     #                        lagrangian_params["rho_factor"] * (tf.nn.relu(-path_flow_all_))
     logging.info("Complete!")
+
+def rmse(estimated, observation):
+    squared_diff = (estimated - observation) ** 2
+    mean_squared_diff = np.mean(squared_diff)
+    rmse_value = np.sqrt(mean_squared_diff)
+    return rmse_value
+
+def evaluation(losses, optimal_path_flows, estimated_link_volumes, target_link_volumes):
+    logging.info("Saving the loss result ...")
+    get_df_losses = pd.DataFrame(losses, columns=["losses"])
+    get_df_losses.index.name = "epoch"
+    get_df_losses.to_csv("loss_results.csv")
+
+    logging.info("Saving the estimated path flows ...")
+    pd.DataFrame(optimal_path_flows.numpy(), columns=["Path_Flows"]).to_csv("estimated_path_flows.csv", index=False)
+
+    # RMSE for a goodness of fit
+    rmse_tot_link_volumes = rmse(estimated_link_volumes, target_link_volumes["total_link_volume"])
+    rmse_car_link_volumes = rmse(estimated_link_volumes * 0.9, target_link_volumes["car_link_volume"])
+    rmse_truck_link_volumes = rmse(estimated_link_volumes * 0.1, target_link_volumes["truck_link_volume"])
+    logging.info(f"RMSE - Total Link Volumes: {rmse_tot_link_volumes}")
+    logging.info(f"RMSE - Car Link Volumes: {rmse_car_link_volumes}")
+    logging.info(f"RMSE - Truck Link Volumes: {rmse_truck_link_volumes}")
 
 if __name__ == "__main__":
 
@@ -109,17 +134,17 @@ if __name__ == "__main__":
                         help="Number of ADMM training steps")
     args = parser.parse_args()
 
-    # dir_data = './data/Sioux_Falls/' # data path parse argument
-    # training_steps = 3  # training step parse argument
-
-    load_data = data_generation(args.data_dir)#data_generation(dir_data)
+    load_data = data_generation(args.data_dir)
     od_volume, spare_od_path_inc, path_link_inc, path_link_inc_n, _, = load_data.reformed_incidence_mat()
     path_flow = load_data.get_init_path_values(init_given=True)
     init_path_flow = path_flow
     bpr_params = load_data.get_bpr_params()
     loaded_target_count = load_data.link_df["volume"]
-
-    target_count = np.array(loaded_target_count, dtype='f')
+    total_link_volume = np.array(loaded_target_count, dtype='f')
+    link_volumes = {}
+    link_volumes["total_link_volume"] = np.array(load_data.link_df["volume"], dtype="f")
+    link_volumes["car_link_volume"] = np.array(load_data.link_df["car_vol"], dtype="f")
+    link_volumes["truck_link_volume"] = np.array(load_data.link_df["truck_vol"], dtype="f")
 
     lagrangian_params, lambda_positive = load_data.get_lagrangian_params(path_link_inc_n, path_link_inc)
     admm_optimization(od_volume=od_volume,
@@ -131,5 +156,5 @@ if __name__ == "__main__":
                       lagrangian_params=lagrangian_params,
                       lambda_positive=lambda_positive,
                       training_steps=args.training_steps,
-                      obs_link_volumes=target_count,
+                      obs_link_volumes=link_volumes,
                       init_path_flows=init_path_flow)

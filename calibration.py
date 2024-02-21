@@ -50,10 +50,22 @@ def optimizeSupply(path_flow,
                       obs_link_volumes):
         est_link_volumes = calculateCoreVars(path_flow, od_volume, spare_od_path_inc,
                                              path_link_inc, path_link_inc_n, bpr_params)
-        loss = tf.reduce_mean((est_link_volumes - obs_link_volumes) ** 2)/\
-               tf.reduce_mean((est_init_link_volumes - obs_link_volumes) ** 2) +\
-               tf.reduce_sum(
-                    (lagrangian_params["rho_factor"] / 2) * tf.nn.relu(-path_flow) ** 2)
+
+        def mse(estimation, observation):
+            return tf.reduce_mean((estimation - observation)**2)
+        def scaled_mse(initial_estimation, estimation, observation):
+            return mse(estimation, observation)/mse(initial_estimation, observation)
+        def positivity_constraints(lagrangian_params, var):
+            return tf.reduce_sum((lagrangian_params / 2) * tf.nn.relu(-var) ** 2)
+
+        # FIXME: set a configuration for link volume proportions
+        car_prop = 0.9
+        truck_prop = 0.1
+        loss = scaled_mse(est_init_link_volumes, est_link_volumes, obs_link_volumes["total_link_volume"]) + \
+               scaled_mse(est_init_link_volumes * car_prop, est_link_volumes * car_prop, obs_link_volumes["car_link_volume"]) + \
+               scaled_mse(est_init_link_volumes * truck_prop, est_link_volumes * truck_prop, obs_link_volumes["truck_link_volume"]) + \
+               positivity_constraints(lagrangian_params["rho_factor"], path_flow)
+
         # FIXME: add an argument to customize different loss functions
         # loss = tf.reduce_sum(
         #     bpr_params["fftt"] * link_flow + (bpr_params["alpha"] * bpr_params["fftt"]) /
@@ -74,9 +86,11 @@ def optimizeSupply(path_flow,
 
 
     # FIXME: create functions for the adam optimizer and bfgs optimizer
+    # FIXME: create configuration to set learning parameters
+    # FIXME: learning stop rule - eta difference
     # Optimization parameters
     learning_rate = 0.01
-    epochs = 10000
+    epochs = 20000
 
     # Set the optimizer
     optimizer = tf.keras.optimizers.legacy.Adam(learning_rate)

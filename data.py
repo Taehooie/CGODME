@@ -31,6 +31,12 @@ class data_generation():
                                                    'capacity',
                                                    'fftt',
                                                    'volume']]
+        # link data manipulation
+        # FIXME: instead of using arbitrary proportions, load observed data
+        self.car_proportion = 0.9
+        self.truck_proportion = 0.1
+        self.link_df['car_vol'] = self.link_df['volume'] * self.car_proportion
+        self.link_df['truck_vol'] = self.link_df['volume'] * self.truck_proportion
         self.link_df['link_no'] = self.link_df.index
 
     def origin_layer(self):
