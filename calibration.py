@@ -33,7 +33,7 @@ def optimizeSupply(path_flow,
                    spare_od_path_inc,
                    path_link_inc,
                    path_link_inc_n,
-                   obs_link_volumes,
+                   link_data,
                    init_path_flows):
 
     est_init_link_volumes = calculateCoreVars(init_path_flows, od_volume, spare_od_path_inc, path_link_inc,
@@ -47,7 +47,7 @@ def optimizeSupply(path_flow,
                       lambda_positive_,
                       bpr_params,
                       lagrangian_params,
-                      obs_link_volumes):
+                      link_data):
         est_link_volumes = calculateCoreVars(path_flow, od_volume, spare_od_path_inc,
                                              path_link_inc, path_link_inc_n, bpr_params)
 
@@ -58,14 +58,23 @@ def optimizeSupply(path_flow,
         def positivity_constraints(lagrangian_params, var):
             return tf.reduce_sum((lagrangian_params / 2) * tf.nn.relu(-var) ** 2)
 
+        def get_vmt(link_volume, link_dist):
+            return tf.squeeze(link_volume) * link_dist
         # FIXME: set a configuration for link volume proportions
         car_prop = 0.9
         truck_prop = 0.1
+        link_dist = link_data["distance_miles"]
         loss = scaled_mse(est_init_link_volumes * car_prop,
-                          est_link_volumes * car_prop, obs_link_volumes["car_link_volume"]) + \
+                          est_link_volumes * car_prop, link_data["car_link_volume"]) + \
                scaled_mse(est_init_link_volumes * truck_prop,
-                          est_link_volumes * truck_prop, obs_link_volumes["truck_link_volume"]) + \
-               positivity_constraints(lagrangian_params["rho_factor"], path_flow)
+                          est_link_volumes * truck_prop, link_data["truck_link_volume"]) + \
+               positivity_constraints(lagrangian_params["rho_factor"], path_flow) + \
+               scaled_mse(get_vmt(est_init_link_volumes * car_prop, link_dist),
+                          get_vmt(est_link_volumes * car_prop, link_dist),
+                          get_vmt(link_data["car_link_volume"], link_dist)) + \
+               scaled_mse(get_vmt(est_init_link_volumes * truck_prop, link_dist),
+                          get_vmt(est_link_volumes * truck_prop, link_dist),
+                          get_vmt(link_data["truck_link_volume"], link_dist))
 
         # FIXME: add an argument to customize different loss functions
         # loss = tf.reduce_sum(
@@ -83,7 +92,7 @@ def optimizeSupply(path_flow,
                            lambda_positive_=lambda_positive_,
                            bpr_params=bpr_params,
                            lagrangian_params=lagrangian_params,
-                           obs_link_volumes=obs_link_volumes)
+                           link_data=link_data)
 
 
     # FIXME: create functions for the adam optimizer and bfgs optimizer
@@ -91,7 +100,7 @@ def optimizeSupply(path_flow,
     # FIXME: learning stop rule - eta difference
     # Optimization parameters
     learning_rate = 0.01
-    epochs = 1000
+    epochs = 100
 
     # Set the optimizer
     optimizer = tf.keras.optimizers.legacy.Adam(learning_rate)

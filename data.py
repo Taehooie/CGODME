@@ -30,7 +30,8 @@ class data_generation():
                                                    'travel_time',
                                                    'capacity',
                                                    'fftt',
-                                                   'volume']]
+                                                   'volume',
+                                                   'distance_mile']]
         # link data manipulation
         # FIXME: instead of using arbitrary proportions, load observed data
         self.car_proportion = 0.9
