@@ -113,10 +113,10 @@ def evaluation(losses, optimal_path_flows, estimated_link_volumes, target_link_v
     pd.DataFrame(optimal_path_flows.numpy(), columns=["Path_Flows"]).to_csv("estimated_path_flows.csv", index=False)
 
     # RMSE for a goodness of fit
-    rmse_tot_link_volumes = rmse(estimated_link_volumes, target_link_volumes["total_link_volume"])
+    # rmse_tot_link_volumes = rmse(estimated_link_volumes, target_link_volumes["total_link_volume"])
     rmse_car_link_volumes = rmse(estimated_link_volumes * 0.9, target_link_volumes["car_link_volume"])
     rmse_truck_link_volumes = rmse(estimated_link_volumes * 0.1, target_link_volumes["truck_link_volume"])
-    logging.info(f"RMSE - Total Link Volumes: {rmse_tot_link_volumes}")
+    # logging.info(f"RMSE - Total Link Volumes: {rmse_tot_link_volumes}")
     logging.info(f"RMSE - Car Link Volumes: {rmse_car_link_volumes}")
     logging.info(f"RMSE - Truck Link Volumes: {rmse_truck_link_volumes}")
 
@@ -136,7 +136,7 @@ if __name__ == "__main__":
 
     load_data = data_generation(args.data_dir)
     od_volume, spare_od_path_inc, path_link_inc, path_link_inc_n, _, = load_data.reformed_incidence_mat()
-    path_flow = load_data.get_init_path_values(init_given=True)
+    path_flow = load_data.get_init_path_values(init_given=False)
     init_path_flow = path_flow
     bpr_params = load_data.get_bpr_params()
     loaded_target_count = load_data.link_df["volume"]

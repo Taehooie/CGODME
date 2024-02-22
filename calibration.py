@@ -61,9 +61,10 @@ def optimizeSupply(path_flow,
         # FIXME: set a configuration for link volume proportions
         car_prop = 0.9
         truck_prop = 0.1
-        loss = scaled_mse(est_init_link_volumes, est_link_volumes, obs_link_volumes["total_link_volume"]) + \
-               scaled_mse(est_init_link_volumes * car_prop, est_link_volumes * car_prop, obs_link_volumes["car_link_volume"]) + \
-               scaled_mse(est_init_link_volumes * truck_prop, est_link_volumes * truck_prop, obs_link_volumes["truck_link_volume"]) + \
+        loss = scaled_mse(est_init_link_volumes * car_prop,
+                          est_link_volumes * car_prop, obs_link_volumes["car_link_volume"]) + \
+               scaled_mse(est_init_link_volumes * truck_prop,
+                          est_link_volumes * truck_prop, obs_link_volumes["truck_link_volume"]) + \
                positivity_constraints(lagrangian_params["rho_factor"], path_flow)
 
         # FIXME: add an argument to customize different loss functions
@@ -90,7 +91,7 @@ def optimizeSupply(path_flow,
     # FIXME: learning stop rule - eta difference
     # Optimization parameters
     learning_rate = 0.01
-    epochs = 20000
+    epochs = 1000
 
     # Set the optimizer
     optimizer = tf.keras.optimizers.legacy.Adam(learning_rate)
