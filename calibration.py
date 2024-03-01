@@ -57,7 +57,10 @@ def optimizeSupply(path_flow,
                    path_link_inc,
                    path_link_inc_n,
                    target_data,
-                   init_path_flows):
+                   init_path_flows,
+                   optimization_params,
+                   data_imputation,
+                   ):
     """
 
     Args:
@@ -71,6 +74,7 @@ def optimizeSupply(path_flow,
         path_link_inc_n:
         target_data:
         init_path_flows:
+        optimization_setting (dict):
 
     Returns:
 
@@ -93,7 +97,9 @@ def optimizeSupply(path_flow,
                       lambda_positive_,
                       bpr_params,
                       lagrangian_params,
-                      target_data):
+                      target_data,
+                      data_imputation,
+                      ):
         """
 
         Args:
@@ -126,9 +132,8 @@ def optimizeSupply(path_flow,
 
         def get_vmt(link_volume, link_dist):
             return tf.squeeze(link_volume) * link_dist
-        # FIXME: set a configuration for link volume proportions
-        car_prop = 0.9
-        truck_prop = 0.1
+        car_prop = data_imputation["car_prop"]
+        truck_prop = data_imputation["truck_prop"]
         link_dist = target_data["distance_miles"]
         loss = scaled_mse(est_init_link_volumes * car_prop,
                           est_link_volumes * car_prop, target_data["car_link_volume"]) + \
@@ -154,15 +159,13 @@ def optimizeSupply(path_flow,
                            lambda_positive_=lambda_positive_,
                            bpr_params=bpr_params,
                            lagrangian_params=lagrangian_params,
-                           target_data=target_data)
+                           target_data=target_data,
+                           data_imputation=data_imputation)
 
-
-    # FIXME: create functions for the adam optimizer and bfgs optimizer
-    # FIXME: create configuration to set learning parameters
     # FIXME: learning stop rule - eta difference
-    # Optimization parameters
-    learning_rate = 0.01
-    epochs = 1000
+    # Set optimization parameters
+    learning_rate = optimization_params["learning_rates"]
+    epochs = optimization_params["training_steps"]
 
     # Set the optimizer
     optimizer = tf.keras.optimizers.legacy.Adam(learning_rate)

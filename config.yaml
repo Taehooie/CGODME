@@ -1,0 +1,11 @@
+data_path: ./data/Sioux_Falls/ #./data/Chicago_Sketch
+demand_randomness: False #False
+avail_initial_path_flow: False #True
+
+optimization_setting:
+  training_steps: 1000
+  learning_rates: 0.01
+
+data_imputation:
+  car_prop: 0.9
+  truck_prop: 0.1
