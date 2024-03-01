@@ -4,12 +4,18 @@ import tensorflow as tf
 
 
 class data_generation():
-    def __init__(self, dir_path):
+    def __init__(self, dir_path, demand_rand):
 
         self.route_assignment_data = pd.read_csv(str(dir_path) + "route_assignment.csv")
         self.link_performance_data = pd.read_csv(str(dir_path) + "link_performance.csv")
 
         # origin data
+        if demand_rand:
+            shape = (len(self.route_assignment_data), 1)
+            random_proportions = np.random.uniform(low=0.8, high=1.2, size=shape)
+            self.route_assignment_data["volume"] = self.route_assignment_data["volume"].values.reshape(shape)  \
+                                                   * random_proportions
+
         self.ozone_df = self.route_assignment_data.groupby('o_zone_id')['volume'].sum()
         self.ozone_df = self.ozone_df.reset_index()
         self.ozone_df['o_node_id'] = self.ozone_df['o_zone_id']
@@ -80,7 +86,8 @@ class data_generation():
 
             for j in range(len(path_df_od)):
                 node_sequence = list(map(int, path_df_od.loc[j, 'node_sequence'].split(';')[0: -1]))
-                link_sequence = [link_no_pair_dict[(node_sequence[k], node_sequence[k + 1])] for k in range(len(node_sequence) - 1)]
+                link_sequence = [link_no_pair_dict[(node_sequence[k], node_sequence[k + 1])]
+                                 for k in range(len(node_sequence) - 1)]
 
                 if j < len(path_df_od) - 1:
                     init_path_vol.append(path_df['volume'][(path_df_od['path_id'] - 1)[j]])
@@ -89,12 +96,27 @@ class data_generation():
                         path1_link_idx_list.append((path_no1, link_id))
                     path_no1 += 1
                 else:
-                    # od_path1_not_idx.append(i, path_no1)
+                    # od_path1_not_idx.append((i, path_no1))
                     for link_id in link_sequence:
                         path2_link_idx_list.append((i, link_id))
 
         return od_path1_idx_list, path1_link_idx_list, path2_link_idx_list, init_path_vol
 
+    def o_od_incidence_mat(self):
+        """
+        Generate 1-dimensional list of mapping origin into origin-destination
+        Returns:
+
+        """
+        o_od_idx_list = []
+        # Index-Based Conversion
+        for o_id in self.ozone_df.index:
+            select_od = self.od_df[self.od_df["o_zone_id"] - 1 == o_id]
+
+            for ind in select_od.index:
+                o_od_idx_list.append((o_id, ind))
+
+        return o_od_idx_list
     def incidence_mat_path_link(self):
         path_df = self.od_to_path_layer()
         link_df = self.link_df
@@ -136,14 +158,16 @@ class data_generation():
     def reformed_incidence_mat(self):
         od_path1_idx_list, path1_link_idx_list, path2_link_idx_list, init_path_flow = self.incidence_mat()
         num_link = self.link_df.shape[0]
-
         od_volume = tf.reshape(tf.constant(self.od_df['volume'], dtype=tf.float32), (-1, 1))
-        od_path_inc = tf.sparse.to_dense(tf.sparse.reorder(tf.sparse.SparseTensor(
-            od_path1_idx_list, [1.0] * len(od_path1_idx_list), (len(od_volume), od_path1_idx_list[-1][
-                1] + 1))))  # in order to access and get the last index of the list created "[-1][1] + 1"
-
+        # od_path_inc = tf.sparse.to_dense(tf.sparse.reorder(tf.sparse.SparseTensor(
+        #     od_path1_idx_list, [1.0] * len(od_path1_idx_list), (len(od_volume), od_path1_idx_list[-1][
+        #         1] + 1))))  # in order to access and get the last index of the list created "list[-1][1] + 1"
+        # indices, values, and shape = > arguments to generate a sparse matrix
         spare_od_path_inc = tf.sparse.SparseTensor(
             od_path1_idx_list, [1.0] * len(od_path1_idx_list), (len(od_volume), od_path1_idx_list[-1][1] + 1))
+
+        # od_idx_list = self.od_df["od_pair"].values
+        # tf.sparse.SparseTensor(od_idx_list, [1.0] * len(od_idx_list), (len(self.ozone_df), len(od_idx_list)))
 
         path_link_inc = tf.sparse.to_dense(tf.sparse.reorder(tf.sparse.SparseTensor(
             path1_link_idx_list, [1.0] * len(path1_link_idx_list), (path1_link_idx_list[-1][0] + 1, num_link))))
@@ -151,7 +175,12 @@ class data_generation():
             path2_link_idx_list, [1.0] * len(path2_link_idx_list), (path2_link_idx_list[-1][0] + 1, num_link))))
 
         return od_volume, spare_od_path_inc, path_link_inc, path_link_inc_n, init_path_flow
+    def get_o_to_od_incidence_mat(self):
+        o_od_idx_list = self.o_od_incidence_mat()
+        sparse_o_od_inc = tf.sparse.SparseTensor(
+            o_od_idx_list, [1.0] * len(o_od_idx_list), (len(self.ozone_df), o_od_idx_list[-1][1] + 1))
 
+        return sparse_o_od_inc
     def get_init_path_values(self, init_given=False):
         _, _, path_link_inc, _, init_path_flow = self.reformed_incidence_mat()
 
