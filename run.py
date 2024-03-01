@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 from data import data_generation
 from calibration import calculateCoreVars, optimizeSupply
-import argparse
 import yaml
 import logging
 warnings.filterwarnings('ignore') # ignore warning messages
@@ -19,9 +18,11 @@ def run_optimization(od_volume: tf.Tensor,
                      bpr_params: dict,
                      lagrangian_params: dict,
                      lambda_positive: tf.Tensor,
-                     training_steps: int,
+                     optimization_params: dict,
                      target_data: dict,
-                     init_path_flows: tf.Tensor) -> None:
+                     init_path_flows: tf.Tensor,
+                     data_imputation: dict,
+                     ) -> None:
 
     """
     Perform ADMM optimization for path flows.
@@ -37,6 +38,8 @@ def run_optimization(od_volume: tf.Tensor,
     - lambda_positive (tf.Tensor): Lagrangian multipliers for positive path flows.
     - training_steps (int): Number of ADMM training steps.
     - target_data (dict): observed target data
+    - init_path_flows (tf.Tensor): initialized path flows (either DTALite results or randomly generated)
+    - data_imputation (dict): proportion of car and truck in a given network
 
     Returns:
     None
@@ -53,6 +56,8 @@ def run_optimization(od_volume: tf.Tensor,
                                        path_link_inc_n,
                                        target_data,
                                        init_path_flows,
+                                       optimization_params,
+                                       data_imputation,
                                        )
 
     estimated_link_volumes, estimated_od_flows, estimated_o_flows = calculateCoreVars(path_flow,
@@ -68,6 +73,7 @@ def run_optimization(od_volume: tf.Tensor,
                tf.squeeze(estimated_od_flows),
                tf.squeeze(estimated_o_flows),
                target_data,
+               data_imputation,
                )
     logging.info("Complete!")
 
@@ -86,7 +92,14 @@ def rmse(estimated, observation):
     rmse_value = np.sqrt(mean_squared_diff)
     return rmse_value
 
-def evaluation(losses, optimal_path_flows, estimated_link_volumes, estimated_od_flows, estimated_o_flows, target_data):
+def evaluation(losses,
+               optimal_path_flows,
+               estimated_link_volumes,
+               estimated_od_flows,
+               estimated_o_flows,
+               target_data,
+               data_imputation,
+               ):
     """
 
     Args:
@@ -108,12 +121,14 @@ def evaluation(losses, optimal_path_flows, estimated_link_volumes, estimated_od_
 
     # RMSE for a goodness of fit
     # NOTE: 0.9 means 90 percent of link volumes is car
-    rmse_car_link_volumes = rmse(estimated_link_volumes * 0.9, target_data["car_link_volume"])
-    rmse_truck_link_volumes = rmse(estimated_link_volumes * 0.1, target_data["truck_link_volume"])
-    rmse_car_vmt = rmse(estimated_link_volumes * 0.9 * target_data["distance_miles"],
-                        target_data["car_link_volume"] * 0.9 * target_data["distance_miles"])
-    rmse_truck_vmt = rmse(estimated_link_volumes * 0.1 * target_data["distance_miles"],
-                        target_data["truck_link_volume"] * 0.1 * target_data["distance_miles"])
+    car_prop = data_imputation["car_prop"]
+    truck_prop = data_imputation["truck_prop"]
+    rmse_car_link_volumes = rmse(estimated_link_volumes * car_prop, target_data["car_link_volume"])
+    rmse_truck_link_volumes = rmse(estimated_link_volumes * truck_prop, target_data["truck_link_volume"])
+    rmse_car_vmt = rmse(estimated_link_volumes * car_prop * target_data["distance_miles"],
+                        target_data["car_link_volume"] * car_prop * target_data["distance_miles"])
+    rmse_truck_vmt = rmse(estimated_link_volumes * truck_prop * target_data["distance_miles"],
+                        target_data["truck_link_volume"] * truck_prop * target_data["distance_miles"])
     rmse_od_flows = rmse(estimated_od_flows, target_data["observed_od_volume"])
     rmse_o_flows = rmse(estimated_o_flows, target_data["observed_o_volume"])
 
@@ -127,27 +142,13 @@ def evaluation(losses, optimal_path_flows, estimated_link_volumes, estimated_od_
 
 if __name__ == "__main__":
 
-    # TODO: read the initial setting from a yaml file (e.g., learning rates, training steps, data directory)
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir',
-                        type=str,
-                        default="./data/Sioux_Falls/",
-                        help="Directory containing data files")
+    # Load YAML configuration file
+    with open('config.yaml', 'r') as file:
+        config = yaml.safe_load(file)
 
-    parser.add_argument("--demand_rand",
-                        type=str,
-                        default=False,
-                        help="Randomize zonal demand through uniform distribution")
-
-    parser.add_argument('--training_steps',
-                        type=int,
-                        default=5,
-                        help="Number of ADMM training steps")
-    args = parser.parse_args()
-
-    load_data = data_generation(args.data_dir, args.demand_rand)
+    load_data = data_generation(config["data_path"], config["demand_randomness"])
     od_volume, spare_od_path_inc, path_link_inc, path_link_inc_n, _, = load_data.reformed_incidence_mat()
-    path_flow = load_data.get_init_path_values(init_given=False)
+    path_flow = load_data.get_init_path_values(init_given=config["avail_initial_path_flow"])
     init_path_flow = path_flow
     bpr_params = load_data.get_bpr_params()
     loaded_link_target = load_data.link_df["volume"]
@@ -173,6 +174,8 @@ if __name__ == "__main__":
                      bpr_params=bpr_params,
                      lagrangian_params=lagrangian_params,
                      lambda_positive=lambda_positive,
-                     training_steps=args.training_steps,
+                     optimization_params=config["optimization_setting"],
                      target_data=target_data,
-                     init_path_flows=init_path_flow)
+                     init_path_flows=init_path_flow,
+                     data_imputation=config["data_imputation"],
+                     )
