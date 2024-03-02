@@ -23,8 +23,8 @@ def calculateCoreVars(path_flow_: tf.Tensor,
 
     """
 
-    def conv_paths_to_ods(sparse_matrix, path_flows):
-        return tf.sparse.sparse_dense_matmul(sparse_matrix, path_flows)
+    def conv_paths_to_ods(sparse_matrix, flows):
+        return tf.sparse.sparse_dense_matmul(sparse_matrix, flows)
     def get_positive_path_flow(od_vols, est_paths):
         return tf.clip_by_value(od_vols - est_paths, 0, tf.float32.max)
 
@@ -32,7 +32,6 @@ def calculateCoreVars(path_flow_: tf.Tensor,
     path_to_ods = conv_paths_to_ods(sparse_matrix["od_path_inc"], path_flow_)
     path_flow_n = get_positive_path_flow(od_volume, path_to_ods) # one od path flow
 
-    # FIXME: convert od_flows to o_flows (incidence matrix?)
     od_flows = path_flow_n + path_to_ods
     o_flows = conv_paths_to_ods(sparse_matrix["o_od_inc"], od_flows)
 
