@@ -9,6 +9,9 @@ class data_generation():
         self.route_assignment_data = pd.read_csv(str(dir_path) + "route_assignment.csv")
         self.link_performance_data = pd.read_csv(str(dir_path) + "link_performance.csv")
 
+        # FIXME: add a if-except error message to capture missing zonal ids
+        # warning messages - check the order of analyzing zone ids
+
         # origin data
         if demand_rand:
             shape = (len(self.route_assignment_data), 1)
@@ -110,11 +113,16 @@ class data_generation():
         """
         o_od_idx_list = []
         # Index-Based Conversion
-        for o_id in self.ozone_df.index:
-            select_od = self.od_df[self.od_df["o_zone_id"] - 1 == o_id]
-
-            for ind in select_od.index:
-                o_od_idx_list.append((o_id, ind))
+        # compare the index and o_ids...
+        # FIXME: need to refactorize the computation of incidence matrix - TEMPORARY CODE
+        o_od_num = 0
+        self.ozone_df["index_o_zone"] = self.ozone_df.index
+        self.od_df = self.od_df.merge(self.ozone_df[["o_zone_id", "index_o_zone"]], on="o_zone_id", how="outer")
+        for o_id in self.ozone_df["index_o_zone"]:
+            select_od = self.od_df[self.od_df["index_o_zone"] == o_id]
+            for j in select_od["od_id"]:
+                o_od_idx_list.append((o_id, o_od_num))
+                o_od_num += 1
 
         return o_od_idx_list
     def incidence_mat_path_link(self):

@@ -1,4 +1,4 @@
-data_path: ./data/Sioux_Falls/ #./data/Chicago_Sketch
+data_path: ./data/Chicago_Sketch/ #./data/Sioux_Falls/ #
 demand_randomness: False #False
 avail_initial_path_flow: False #True
 
