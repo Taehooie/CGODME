@@ -3,7 +3,7 @@ demand_randomness: False #True
 avail_initial_path_flow: True # UE-based path flows (i.e., DTALite Path Flows)
 
 optimization_setting:
-  training_steps: 1 # minimum iteration that can be shown in the logging message is 100
+  training_steps: 1
   learning_rates: 0.01
   penalty_coefficient: 2.0
 
