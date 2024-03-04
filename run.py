@@ -16,12 +16,11 @@ def run_optimization(od_volume: tf.Tensor,
                      path_link_inc_n: tf.Tensor,
                      path_flow: tf.Tensor,
                      bpr_params: dict,
-                     lagrangian_params: dict,
-                     lambda_positive: tf.Tensor,
                      optimization_params: dict,
                      target_data: dict,
                      init_path_flows: tf.Tensor,
                      data_imputation: dict,
+                     obj_setting: dict,
                      ) -> None:
 
     """
@@ -34,12 +33,11 @@ def run_optimization(od_volume: tf.Tensor,
     - path_link_inc_n (tf.Tensor): Path-link incidence matrix with one pair.
     - path_flow (tf.Tensor): Initial path flows.
     - bpr_params (dict): Parameters for the BPR (Bureau of Public Roads) function.
-    - lagrangian_params (dict): Parameters for the Lagrangian multiplier update.
-    - lambda_positive (tf.Tensor): Lagrangian multipliers for positive path flows.
     - training_steps (int): Number of ADMM training steps.
     - target_data (dict): observed target data
     - init_path_flows (tf.Tensor): initialized path flows (either DTALite results or randomly generated)
     - data_imputation (dict): proportion of car and truck in a given network
+    - obj_setting (dict): dictionary of multi-objective dispersion parameters
 
     Returns:
     None
@@ -47,9 +45,7 @@ def run_optimization(od_volume: tf.Tensor,
 
     logging.info("Finding Optimal Path Flows...")
     path_flow, losses = optimizeSupply(path_flow,
-                                       lambda_positive,
                                        bpr_params,
-                                       lagrangian_params,
                                        od_volume,
                                        sparse_matrix,
                                        path_link_inc,
@@ -58,6 +54,7 @@ def run_optimization(od_volume: tf.Tensor,
                                        init_path_flows,
                                        optimization_params,
                                        data_imputation,
+                                       obj_setting,
                                        )
 
     estimated_link_volumes, estimated_od_flows, estimated_o_flows = calculateCoreVars(path_flow,
@@ -117,6 +114,7 @@ def evaluation(losses,
     get_df_losses.to_csv("loss_results.csv")
 
     logging.info("Saving the estimated path flows ...")
+    # TODO: create a full list of estimated path flows to be mapped into the given network
     pd.DataFrame(optimal_path_flows.numpy(), columns=["Path_Flows"]).to_csv("estimated_path_flows.csv", index=False)
 
     # RMSE for a goodness of fit
@@ -126,16 +124,16 @@ def evaluation(losses,
     rmse_car_link_volumes = rmse(estimated_link_volumes * car_prop, target_data["car_link_volume"])
     rmse_truck_link_volumes = rmse(estimated_link_volumes * truck_prop, target_data["truck_link_volume"])
     rmse_car_vmt = rmse(estimated_link_volumes * car_prop * target_data["distance_miles"],
-                        target_data["car_link_volume"] * car_prop * target_data["distance_miles"])
+                        target_data["car_link_volume"] * target_data["distance_miles"])
     rmse_truck_vmt = rmse(estimated_link_volumes * truck_prop * target_data["distance_miles"],
-                        target_data["truck_link_volume"] * truck_prop * target_data["distance_miles"])
+                          target_data["truck_link_volume"] * target_data["distance_miles"])
     rmse_od_flows = rmse(estimated_od_flows, target_data["observed_od_volume"])
     rmse_o_flows = rmse(estimated_o_flows, target_data["observed_o_volume"])
 
     # logging messages
-    logging.info(f"RMSE: Car Link Volumes: {rmse_car_link_volumes}")
-    logging.info(f"RMSE: Truck Link Volumes: {rmse_truck_link_volumes}")
-    logging.info(f"RMSE: Car VMT: {rmse_car_vmt}")
+    logging.info(f"RMSE: Passenger Car Count: {rmse_car_link_volumes}")
+    logging.info(f"RMSE: Truck Count: {rmse_truck_link_volumes}")
+    logging.info(f"RMSE: Passenger Car VMT: {rmse_car_vmt}")
     logging.info(f"RMSE: Truck VMT: {rmse_truck_vmt}")
     logging.info(f"RMSE: OD Flow: {rmse_od_flows}")
     logging.info(f"RMSE: O Flow: {rmse_o_flows}")
@@ -172,10 +170,9 @@ if __name__ == "__main__":
                      path_link_inc_n=path_link_inc_n,
                      path_flow=path_flow,
                      bpr_params=bpr_params,
-                     lagrangian_params=lagrangian_params,
-                     lambda_positive=lambda_positive,
                      optimization_params=config["optimization_setting"],
                      target_data=target_data,
                      init_path_flows=init_path_flow,
                      data_imputation=config["data_imputation"],
+                     obj_setting=config["multi_objective_function_setting"]
                      )

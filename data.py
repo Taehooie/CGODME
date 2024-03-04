@@ -6,11 +6,11 @@ import tensorflow as tf
 class data_generation():
     def __init__(self, dir_path, demand_rand):
 
+        # self.route_assignment_data = pd.read_csv(str(dir_path) + "route_assignment_s0_25nb.csv")
+        # self.link_performance_data = pd.read_csv(str(dir_path) + "link_performance_s0_25nb.csv")
+
         self.route_assignment_data = pd.read_csv(str(dir_path) + "route_assignment.csv")
         self.link_performance_data = pd.read_csv(str(dir_path) + "link_performance.csv")
-
-        # FIXME: add a if-except error message to capture missing zonal ids
-        # warning messages - check the order of analyzing zone ids
 
         # origin data
         if demand_rand:
@@ -99,7 +99,7 @@ class data_generation():
                         path1_link_idx_list.append((path_no1, link_id))
                     path_no1 += 1
                 else:
-                    # od_path1_not_idx.append((i, path_no1))
+                    od_path1_not_idx.append((i, path_no1))
                     for link_id in link_sequence:
                         path2_link_idx_list.append((i, link_id))
 
@@ -114,7 +114,7 @@ class data_generation():
         o_od_idx_list = []
         # Index-Based Conversion
         # compare the index and o_ids...
-        # FIXME: need to refactorize the computation of incidence matrix - TEMPORARY CODE
+        # FIXME: need to re-factorize the computation of incidence matrix - TEMPORARY CODE: non-sequence zonal ids
         o_od_num = 0
         self.ozone_df["index_o_zone"] = self.ozone_df.index
         self.od_df = self.od_df.merge(self.ozone_df[["o_zone_id", "index_o_zone"]], on="o_zone_id", how="outer")
@@ -167,15 +167,8 @@ class data_generation():
         od_path1_idx_list, path1_link_idx_list, path2_link_idx_list, init_path_flow = self.incidence_mat()
         num_link = self.link_df.shape[0]
         od_volume = tf.reshape(tf.constant(self.od_df['volume'], dtype=tf.float32), (-1, 1))
-        # od_path_inc = tf.sparse.to_dense(tf.sparse.reorder(tf.sparse.SparseTensor(
-        #     od_path1_idx_list, [1.0] * len(od_path1_idx_list), (len(od_volume), od_path1_idx_list[-1][
-        #         1] + 1))))  # in order to access and get the last index of the list created "list[-1][1] + 1"
-        # indices, values, and shape = > arguments to generate a sparse matrix
         spare_od_path_inc = tf.sparse.SparseTensor(
             od_path1_idx_list, [1.0] * len(od_path1_idx_list), (len(od_volume), od_path1_idx_list[-1][1] + 1))
-
-        # od_idx_list = self.od_df["od_pair"].values
-        # tf.sparse.SparseTensor(od_idx_list, [1.0] * len(od_idx_list), (len(self.ozone_df), len(od_idx_list)))
 
         path_link_inc = tf.sparse.to_dense(tf.sparse.reorder(tf.sparse.SparseTensor(
             path1_link_idx_list, [1.0] * len(path1_link_idx_list), (path1_link_idx_list[-1][0] + 1, num_link))))
