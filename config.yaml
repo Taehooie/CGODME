@@ -1,19 +1,19 @@
-data_path: ./data/Chicago_Sketch/ #./data/Sioux_Falls/ #
+data_path: ./data/Sioux_Falls/ # ./data/Chicago_Sketch/ #
 demand_randomness: False #True
-avail_initial_path_flow: True # UE-based path flows (i.e., DTALite Path Flows)
-
-optimization_setting:
-  training_steps: 1
-  learning_rates: 0.01
-  penalty_coefficient: 2.0
+avail_initial_path_flow: False # UE-based path flows (i.e., DTALite Path Flows)
 
 multi_objective_function_setting: # dispersion weighting factors
   passenger_car_count: 1.0
   truck_count: 1.0
   passenger_car_vmt: 1.0
   truck_vmt: 1.0
-  od_split: 0.0
-  zonal: 0.0 # (0 means no consideration)
+  od_split: 1.0
+  zonal: 1.0 # (0 means no consideration)
+
+optimization_setting:
+  training_steps: 100
+  learning_rates: 0.01
+  penalty_coefficient: 2.0
 
 data_imputation:
   car_prop: 0.9 # arbitrary proportion of passenger cars (90 percent)

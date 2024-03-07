@@ -176,12 +176,14 @@ class data_generation():
             path2_link_idx_list, [1.0] * len(path2_link_idx_list), (path2_link_idx_list[-1][0] + 1, num_link))))
 
         return od_volume, spare_od_path_inc, path_link_inc, path_link_inc_n, init_path_flow
+
     def get_o_to_od_incidence_mat(self):
         o_od_idx_list = self.o_od_incidence_mat()
         sparse_o_od_inc = tf.sparse.SparseTensor(
             o_od_idx_list, [1.0] * len(o_od_idx_list), (len(self.ozone_df), o_od_idx_list[-1][1] + 1))
 
         return sparse_o_od_inc
+
     def get_init_path_values(self, init_given=False):
         _, _, path_link_inc, _, init_path_flow = self.reformed_incidence_mat()
 

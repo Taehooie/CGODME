@@ -3,11 +3,12 @@ import tensorflow as tf
 import pandas as pd
 import numpy as np
 from data import data_generation
-from calibration import calculateCoreVars, optimizeSupply
+from calibration import odme_mapping_variables, optimization
 import yaml
 import logging
-warnings.filterwarnings('ignore') # ignore warning messages
-logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.DEBUG) # configuration of logging messages
+
+warnings.filterwarnings('ignore')  # ignore warning messages
+logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.DEBUG)  # configuration of logging messages
 
 
 def run_optimization(od_volume: tf.Tensor,
@@ -18,11 +19,9 @@ def run_optimization(od_volume: tf.Tensor,
                      bpr_params: dict,
                      optimization_params: dict,
                      target_data: dict,
-                     init_path_flows: tf.Tensor,
                      data_imputation: dict,
                      obj_setting: dict,
                      ) -> None:
-
     """
     Perform ADMM optimization for path flows.
 
@@ -44,28 +43,43 @@ def run_optimization(od_volume: tf.Tensor,
     """
 
     logging.info("Finding Optimal Path Flows...")
-    path_flow, losses = optimizeSupply(path_flow,
-                                       bpr_params,
-                                       od_volume,
-                                       sparse_matrix,
-                                       path_link_inc,
-                                       path_link_inc_n,
-                                       target_data,
-                                       init_path_flows,
-                                       optimization_params,
-                                       data_imputation,
-                                       obj_setting,
-                                       )
+    init_odme_mapping_variables = {}
+    # get the initialized odme mapping variables
+    init_link_volumes, init_od_flows, init_o_flows, _ = odme_mapping_variables(path_flow,
+                                                                               od_volume,
+                                                                               sparse_matrix,
+                                                                               path_link_inc,
+                                                                               path_link_inc_n,
+                                                                               bpr_params)
+    init_odme_mapping_variables["link_counts"] = init_link_volumes
+    init_odme_mapping_variables["od_flows"] = init_od_flows
+    init_odme_mapping_variables["o_flows"] = init_o_flows
 
-    estimated_link_volumes, estimated_od_flows, estimated_o_flows = calculateCoreVars(path_flow,
-                                                                   od_volume,
-                                                                   sparse_matrix,
-                                                                   path_link_inc,
-                                                                   path_link_inc_n,
-                                                                   bpr_params)
+    # start to find optimal path flows
+    optimal_path_flow, losses = optimization(path_flow,
+                                             bpr_params,
+                                             od_volume,
+                                             sparse_matrix,
+                                             path_link_inc,
+                                             path_link_inc_n,
+                                             target_data,
+                                             init_odme_mapping_variables,
+                                             optimization_params,
+                                             data_imputation,
+                                             obj_setting,
+                                             )
+    # get the odme mapping variables using the optimal path flows
+    estimated_link_volumes, estimated_od_flows, estimated_o_flows, optimal_paths = odme_mapping_variables(
+        optimal_path_flow,
+        od_volume,
+        sparse_matrix,
+        path_link_inc,
+        path_link_inc_n,
+        bpr_params)
 
+    concat_path_flows = get_path_flow_columns(load_data, optimal_paths)
     evaluation(losses,
-               path_flow,
+               concat_path_flows,
                tf.squeeze(estimated_link_volumes),
                tf.squeeze(estimated_od_flows),
                tf.squeeze(estimated_o_flows),
@@ -73,6 +87,37 @@ def run_optimization(od_volume: tf.Tensor,
                data_imputation,
                )
     logging.info("Complete!")
+
+
+def get_path_flow_columns(data_source, optimal_paths):
+    """
+
+    Args:
+        data_source:
+        optimal_paths:
+
+    Returns:
+
+    """
+    od_layer = data_source.od_df
+    path_layer = data_source.od_to_path_layer()
+    restore_path_flows = []
+    multi_od_pair_idx = 0
+    one_od_pair_idx = 0
+
+    for i in range(len(od_layer)):
+        od_id = od_layer.loc[i, 'od_id']
+        od_path = path_layer[path_layer['od_id'] == od_id].reset_index(drop=True)
+
+        for j in range(len(od_path)):
+            if j < len(od_path) - 1:
+                restore_path_flows.append(optimal_paths["multi_od_pairs"][multi_od_pair_idx].numpy().item())
+                multi_od_pair_idx += 1
+            else:
+                restore_path_flows.append(optimal_paths["one_od_pair"][one_od_pair_idx].numpy().item())
+                one_od_pair_idx += 1
+
+    return restore_path_flows
 
 def rmse(estimated, observation):
     """
@@ -89,6 +134,7 @@ def rmse(estimated, observation):
     rmse_value = np.sqrt(mean_squared_diff)
     return rmse_value
 
+
 def evaluation(losses,
                optimal_path_flows,
                estimated_link_volumes,
@@ -103,22 +149,32 @@ def evaluation(losses,
         losses:
         optimal_path_flows:
         estimated_link_volumes:
+        estimated_od_flows:
+        estimated_o_flows:
         target_data:
+        data_imputation:
 
     Returns:
 
     """
-    logging.info("Saving the loss result ...")
+    logging.info("Saving loss ...")
     get_df_losses = pd.DataFrame(losses, columns=["losses"])
     get_df_losses.index.name = "epoch"
-    get_df_losses.to_csv("loss_results.csv")
+    get_df_losses.to_csv(config["data_path"] + "loss_results.csv")
 
-    logging.info("Saving the estimated path flows ...")
-    # TODO: create a full list of estimated path flows to be mapped into the given network
-    pd.DataFrame(optimal_path_flows.numpy(), columns=["Path_Flows"]).to_csv("estimated_path_flows.csv", index=False)
+    logging.info("Saving the optimal path flows ...")
+    load_path_df = load_data.route_assignment_data[["path_no",
+                                                    "o_zone_id",
+                                                    "d_zone_id",
+                                                    "node_sequence",
+                                                    "link_sequence",
+                                                    "geometry",
+                                                    ]]
+    path_flow_df = pd.DataFrame(optimal_path_flows, columns=["Path_Flows"])
+    load_path_df = load_path_df.join(path_flow_df)
+    load_path_df.to_csv(config["data_path"] + "calibrated_results.csv", index=False)
 
-    # RMSE for a goodness of fit
-    # NOTE: 0.9 means 90 percent of link volumes is car
+    # Goodness of Fit (RMSE)
     car_prop = data_imputation["car_prop"]
     truck_prop = data_imputation["truck_prop"]
     rmse_car_link_volumes = rmse(estimated_link_volumes * car_prop, target_data["car_link_volume"])
@@ -138,8 +194,8 @@ def evaluation(losses,
     logging.info(f"RMSE: OD Flow: {rmse_od_flows}")
     logging.info(f"RMSE: O Flow: {rmse_o_flows}")
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     # Load YAML configuration file
     with open('config.yaml', 'r') as file:
         config = yaml.safe_load(file)
@@ -152,16 +208,13 @@ if __name__ == "__main__":
     loaded_link_target = load_data.link_df["volume"]
     total_link_volume = np.array(loaded_link_target, dtype='f')
 
-    sparse_matrix = {}
-    sparse_matrix["o_od_inc"] = load_data.get_o_to_od_incidence_mat()
-    sparse_matrix["od_path_inc"] = spare_od_path_inc
-    target_data = {}
-    target_data["observed_o_volume"] = np.array(load_data.ozone_df["volume"], dtype="f")
-    target_data["observed_od_volume"] = np.array(load_data.od_df["volume"], dtype="f")
-    target_data["total_link_volume"] = np.array(load_data.link_df["volume"], dtype="f")
-    target_data["car_link_volume"] = np.array(load_data.link_df["car_vol"], dtype="f")
-    target_data["truck_link_volume"] = np.array(load_data.link_df["truck_vol"], dtype="f")
-    target_data["distance_miles"] = np.array(load_data.link_df["distance_mile"], dtype="f")
+    sparse_matrix = {"o_od_inc": load_data.get_o_to_od_incidence_mat(), "od_path_inc": spare_od_path_inc}
+    target_data = {"observed_o_volume": np.array(load_data.ozone_df["volume"], dtype="f"),
+                   "observed_od_volume": np.array(load_data.od_df["volume"], dtype="f"),
+                   "total_link_volume": np.array(load_data.link_df["volume"], dtype="f"),
+                   "car_link_volume": np.array(load_data.link_df["car_vol"], dtype="f"),
+                   "truck_link_volume": np.array(load_data.link_df["truck_vol"], dtype="f"),
+                   "distance_miles": np.array(load_data.link_df["distance_mile"], dtype="f")}
 
     lagrangian_params, lambda_positive = load_data.get_lagrangian_params(path_link_inc_n, path_link_inc)
     run_optimization(od_volume=od_volume,
@@ -172,7 +225,6 @@ if __name__ == "__main__":
                      bpr_params=bpr_params,
                      optimization_params=config["optimization_setting"],
                      target_data=target_data,
-                     init_path_flows=init_path_flow,
                      data_imputation=config["data_imputation"],
                      obj_setting=config["multi_objective_function_setting"]
                      )
