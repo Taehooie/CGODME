@@ -200,7 +200,7 @@ if __name__ == "__main__":
     with open('config.yaml', 'r') as file:
         config = yaml.safe_load(file)
 
-    load_data = data_generation(config["data_path"], config["demand_randomness"])
+    load_data = data_generation(config)
     od_volume, spare_od_path_inc, path_link_inc, path_link_inc_n, _, = load_data.reformed_incidence_mat()
     path_flow = load_data.get_init_path_values(init_given=config["avail_initial_path_flow"])
     init_path_flow = path_flow
