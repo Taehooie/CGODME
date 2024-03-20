@@ -51,7 +51,7 @@ def odme_mapping_variables(path_flow_: tf.Tensor,
 
     return link_flow, od_flows, o_flows, optimal_path_flows
 
-
+# @tf.function
 def multi_objective_loss(path_flow,
                          od_volume,
                          sparse_matrix,
@@ -88,7 +88,13 @@ def multi_objective_loss(path_flow,
                                                                             bpr_params)
 
     def mse(estimation, observation):
-        return tf.reduce_mean((estimation - observation) ** 2)
+        # Reshaping the estimated and observed arrays to avoid OOM
+        reshape_estimation = tf.reshape(estimation, (estimation.shape[0], ))
+        reshape_observation = tf.reshape(observation, (observation.shape[0], ))
+
+        # calculate mean square error
+        mean_square_err = tf.reduce_mean(tf.subtract(reshape_estimation, reshape_observation) ** 2)
+        return mean_square_err
 
     def scaled_mse(initial_estimation, estimation, observation):
         init_mse = mse(initial_estimation, observation)
@@ -106,7 +112,6 @@ def multi_objective_loss(path_flow,
     car_prop = data_imputation["car_prop"]
     truck_prop = data_imputation["truck_prop"]
     link_dist = target_data["distance_miles"]
-    # FIXME: OOM with zonal and od split losses
     loss = obj_setting["passenger_car_count"] * scaled_mse(init_odme_mapping_vars["link_counts"] * car_prop,
                                                            est_link_volumes * car_prop,
                                                            target_data["car_link_volume"]) \

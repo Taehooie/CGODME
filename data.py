@@ -1,21 +1,25 @@
 import pandas as pd
 import numpy as np
 import tensorflow as tf
+import logging
 
 
-class data_generation():
-    def __init__(self, dir_path, demand_rand):
+class data_generation:
+    def __init__(self, config_setting):
 
-        # self.route_assignment_data = pd.read_csv(str(dir_path) + "route_assignment_s0_25nb.csv")
-        # self.link_performance_data = pd.read_csv(str(dir_path) + "link_performance_s0_25nb.csv")
+        self.config_set = config_setting
+        self.route_assignment_data = pd.read_csv(str(self.config_set["data_path"]) + "ue_paths.csv")
+        self.link_performance_data = pd.read_csv(str(self.config_set["data_path"]) + "ue_links.csv")
 
-        self.route_assignment_data = pd.read_csv(str(dir_path) + "route_assignment.csv")
-        self.link_performance_data = pd.read_csv(str(dir_path) + "link_performance.csv")
+        if self.config_set["sensor_data_avail"]:
+            self.sensor_data = pd.read_csv(str(self.config_set["data_path"]) + "sensors.csv")
+            self.imputed_sensor_data = self.sensor_data_imputation()
+            self.link_performance_data = self.get_observed_link_counts()
 
         # origin data
-        if demand_rand:
+        if self.config_set["demand_randomness"]:
             shape = (len(self.route_assignment_data), 1)
-            random_proportions = np.random.uniform(low=0.8, high=1.2, size=shape)
+            random_proportions = np.random.uniform(low=0.1, high=2.0, size=shape)
             self.route_assignment_data["volume"] = self.route_assignment_data["volume"].values.reshape(shape)  \
                                                    * random_proportions
 
@@ -37,7 +41,7 @@ class data_generation():
                                                    'from_node_id',
                                                    'to_node_id',
                                                    'travel_time',
-                                                   'capacity',
+                                                   'lane_capacity',
                                                    'fftt',
                                                    'volume',
                                                    'distance_mile']]
@@ -197,7 +201,7 @@ class data_generation():
     def get_bpr_params(self):
         bpr_params = {}
         bpr_params["fftt"] = tf.reshape(tf.constant(self.link_df['fftt'], dtype=tf.float32), (-1, 1))
-        bpr_params["cap"] = tf.reshape(tf.constant(self.link_df['capacity'], dtype=tf.float32), (-1, 1))
+        bpr_params["cap"] = tf.reshape(tf.constant(self.link_df['lane_capacity'], dtype=tf.float32), (-1, 1))
         bpr_params["alpha"] = 0.15
         bpr_params["beta"] = 4
 
@@ -211,3 +215,44 @@ class data_generation():
         init_lambda_values = tf.zeros((len(path_link_inc_n) + len(path_link_inc), 1), tf.float32)
 
         return lagrangian_params, init_lambda_values
+
+    def sensor_data_imputation(self):
+        # get the specified starting time and duration (from the yaml file)
+        start_time = self.config_set["sensor_data_setting"]["obs_time_duration"]["obs_starting_time"]
+        end_time = self.config_set["sensor_data_setting"]["obs_time_duration"]["obs_ending_time"]
+
+        # get the average link count values based on starting and end time
+        specified_sensor_df = self.sensor_data[(self.sensor_data["start_time_in_min"]>=start_time) &
+                                               (self.sensor_data["end_time_in_min"]<=end_time)].reset_index(drop=True)
+        get_avg_link_count_df = specified_sensor_df.groupby([
+            "from_node_id", "to_node_id"]).mean("link_count").reset_index()
+        select_columns = ["from_node_id", "to_node_id", "link_count"]
+
+        return get_avg_link_count_df[select_columns]
+
+    def get_observed_link_counts(self):
+
+        # to avoid modifying the original data
+        obs_based_link_data = self.imputed_sensor_data.copy()
+        ue_based_link_data = self.link_performance_data.copy()
+        obs_based_link_data["obs_links"] = self.get_link_pair(obs_based_link_data)
+        ue_based_link_data["ue_links"] = self.get_link_pair(ue_based_link_data)
+
+        store_matched_idx = []
+        store_obs_link_vol = []
+        for obs_link_vol, obs_link in zip(obs_based_link_data["link_count"], obs_based_link_data["obs_links"]):
+            find_idx = ue_based_link_data[ue_based_link_data["ue_links"] == obs_link].index
+            if not find_idx.empty:
+                ue_based_link_data.loc[find_idx, "volume"] = obs_link_vol
+                store_matched_idx.append(find_idx[0])
+                store_obs_link_vol.append(obs_link_vol)
+        logging.info(f"The total number of re-updating links: {len(store_matched_idx)}")
+        logging.info(f"The sum of the initial link volumes matched with sensors: {self.link_performance_data.loc[store_matched_idx].volume.sum()}")
+        logging.info(f"The sum of the renewed link volumes matched with sensors: {ue_based_link_data.loc[store_matched_idx].volume.sum()}")
+        if ue_based_link_data["volume"].isna().sum() != 0:
+            raise ValueError("There exist NaN values")
+        return ue_based_link_data
+
+    @staticmethod
+    def get_link_pair(link_data):
+        return link_data.apply(lambda row: (int(row["from_node_id"]), int(row["to_node_id"])), axis=1)
