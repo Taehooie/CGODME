@@ -188,7 +188,7 @@ def optimization(path_flow,
     epochs = optimization_params["training_steps"]
 
     # Set the optimizer
-    optimizer = tf.keras.optimizers.legacy.Adam(learning_rate)
+    optimizer = tf.keras.optimizers.Adam(learning_rate)
 
     trace_loss = []
     for epoch in range(epochs):
